@@ -1,18 +1,18 @@
-var DBReader = DBReader || {};
-var MessageHandler = require('./util/MessageHandler');
+var DBReader = DBReader || {},
+    MessageHandler = require("./util/MessageHandler");
 
 DBReader.ProcedureMapper = function (_connectionConfig) {
     this.ConnectionConfig =_connectionConfig;
-    this.mysqlClient = require('mysql');
+    this.mysqlClient = require("mysql");
     this.Connection = null;
     this.isValid = { isValid : false, messages: []};
 };
 
 DBReader.ProcedureMapper.ConnectionConfig = {
-  Host:'',
-  Password:'',
-  User:'',
-  DB:''
+  Host:"",
+  Password:"",
+  User:"",
+  DB:""
 };
 
 DBReader.ProcedureMapper.prototype.ValidateConnectionParam = function () {
@@ -23,17 +23,17 @@ DBReader.ProcedureMapper.prototype.ValidateConnectionParam = function () {
       db = this.ConnectionConfig.DB,
       response = [];
 
-      if(host === null || host === undefined || host === '')
-        response.pop('O valor do host não pode ser nulo, indefinido ou vazio');
+      if(host === null || host === undefined || host === "")
+        response.pop("O valor do host não pode ser nulo, indefinido ou vazio");
 
-      if(user === null || user === undefined || user === '')
-        response.pop('O valor do user não pode ser nulo, indefinido ou vazio');
+      if(user === null || user === undefined || user === "")
+        response.pop("O valor do user não pode ser nulo, indefinido ou vazio");
 
-      if(pwd === null || pwd === undefined || pwd === '')
-        response.pop('O valor do pwd não pode ser nulo, indefinido ou vazio');
+      if(pwd === null || pwd === undefined || pwd === "")
+        response.pop("O valor do pwd não pode ser nulo, indefinido ou vazio");
 
-      if(db === null || db === undefined || db === '')
-        response.pop('O valor do db não pode ser nulo, indefinido ou vazio');
+      if(db === null || db === undefined || db === "")
+        response.pop("O valor do db não pode ser nulo, indefinido ou vazio");
 
       return {
           isValid : response.length == 0,
@@ -63,9 +63,9 @@ DBReader.ProcedureMapper.prototype.Connect = function () {
 
     this.connection.connect(function (err) {
         if(err){
-            MessageHandler.ShowMessages(['Houve um erro ao acessar o banco de dados: ' + err.code]);
+            MessageHandler.ShowMessages(["Houve um erro ao acessar o banco de dados: " + err.code]);
         }else{
-          console.log('Conexão realizada com sucesso!');
+          console.log("Conexão realizada com sucesso!");
         }
     });
 };
@@ -73,33 +73,34 @@ DBReader.ProcedureMapper.prototype.Connect = function () {
 DBReader.ProcedureMapper.prototype.Disconnect = function () {
   this.connection.end(function (err) {
     if(err){
-        MessageHandler.ShowMessages(['Houve um erro ao desconectar do banco de dados: ' + err.code]);
+        MessageHandler.ShowMessages(["Houve um erro ao desconectar do banco de dados: " + err.code]);
     }else{
-          MessageHandler.ShowMessages(['Conexão encerrada com sucesso!']);
+          MessageHandler.ShowMessages(["Conexão encerrada com sucesso!"]);
     }
   });
 };
 
 DBReader.ProcedureMapper.prototype.GenerateCRUD = function GenerateCRUD (table) {
-    var query = '';
+    var query = "";
 };
 
 DBReader.ProcedureMapper.prototype.GetColumns = function GetColumns (table, callback) {
-    var clm = null;
-    var ctx = this;
-    var arr = [];
+    var clm = null,
+        ctx = this,
+        arr = [];
 
-     this.connection.query('DESCRIBE ' + table, function (err, rows) {
+     this.connection.query("DESCRIBE " + table, function (err, rows) {
+       
        if (err) {
          console.log(err);
        }  else {
          for (var i = 0, count = rows.length; i < count; i++) {
            var item = rows[i];
             var obj = {
-             'name': rows[i].Field
-            ,'type': rows[i].Type
-            ,'isNullable': rows[i].Null ? true : false
-            ,'isPK': (rows[i].Key != null && rows[i].Key == 'PRI') ? true : false
+             "name": rows[i].Field
+            ,"type": rows[i].Type
+            ,"isNullable": rows[i].Null ? true : false
+            ,"isPK": (rows[i].Key != null && rows[i].Key == "PRI") ? true : false
            };
 
            arr.push(obj);
@@ -114,43 +115,48 @@ DBReader.ProcedureMapper.prototype.GenerateSelect = function GenerateSelect (tab
   var ctx = this;
 
     this.GetColumns(table, function cbkGenerateSelect (tableInfo) {
+      
+        var parameters = ctx.MountQueryParameters(tableInfo, "SELECT"), 
+            clauses = ctx.MountWhereClause(tableInfo, "SELECT") + " \n";
 
-        var parameters = ctx.MountQueryParameters(tableInfo, 'SELECT');
+        if(clauses == "")
+          throw "A consulta específica exige um parâmetro para compor a clausula where";
 
-        var text  = '';
-            text += 'DELIMITER ## \n'
-            text += 'DROP PROCEDURE IF EXISTS sp_' + table + '_SELECT ; \n'
-            text += 'CREATE PROCEDURE sp_' + table + '_SELECT ' + parameters + ' \n';
-            text += 'BEGIN \n';
-            text += 'SELECT \n';
+        var text  = "USE " +  ctx.ConnectionConfig.DB + " ;\n";            
+            text += "DROP PROCEDURE IF EXISTS sp" + table + "SELECT ; \n";
+            text += "CREATE PROCEDURE sp" + table + "SELECT " + parameters + " \n";
+            text += "BEGIN \n";
+            text += "SELECT \n";
 
-        for (var i = 0, count = tableInfo.length; i < count; i++) {
-          text += (i==0 ? '  ':', ') + tableInfo[i].name + ' \n';
-        }
+            for (var i = 0, count = tableInfo.length; i < count; i++) {
+              text += (i==0 ? "  ":", ") + tableInfo[i].name + " \n";
+            }
 
-        text += 'FROM ' + table + ' \n'
-        text += ctx.MountWhereCondition(tableInfo) + ' \n';
-        text += 'END## \n'
-        text += 'DELIMITER ; \n';
+            text += "FROM " + table + " \n"
+            text +=  clauses;
+            text += "END \n";
 
-        console.log(text);
-
-        ctx.connection.query(text,function (err) {
-            console.log('Houve um erro ao executar a procedure de select: ' + err);
-        });
+            
+            ctx.connection.query(text,function (err) {
+                if(err !== null && err !== undefined)
+                  console.log("Houve um erro ao gerar a procedure!" + err);
+                else{
+                  console.log("Procedure gerada com sucesso!");
+                }
+            });           
 
     });
 };
 
 DBReader.ProcedureMapper.prototype.MountQueryParameters = function MountQueryParameters(tableInfo, sqlCommand) {
     var key = null,
-        text = '';
+        text = "";
         i = 0,
         count = tableInfo.length;
 
-        if (tableInfo == null || tableInfo == undefined || count <= 0) return '';
+        if (tableInfo == null || tableInfo == undefined || count <= 0) return "";
 
-        text += '( ';
+        text += "( ";
 
         while (key == null && i < count) {
           if(tableInfo[i].Key == true){
@@ -161,31 +167,79 @@ DBReader.ProcedureMapper.prototype.MountQueryParameters = function MountQueryPar
         }
 
         if(key == null){
-            if(sqlCommand.toUpperCase() == 'SELECT'){
+            if(sqlCommand.toUpperCase() == "SELECT"){
               key = tableInfo[0];
             }else {
-              return '';
+              return "";
             }
         }
 
-        text += 'in p_' + key.name + ' ' + key.type + ' ) \n';
+        text += "in p" + key.name + " " + this.FormatDataTypeParameter(key.type) + " ) \n";
 
         return text;
 };
 
-DBReader.ProcedureMapper.prototype.MountWhereCondition = function MountWhereCondition(tableInfo) {
+DBReader.ProcedureMapper.prototype.MountWhereClause = function MountWhereClause(tableInfo, sqlCommand) {
+        if(sqlCommand == null || sqlCommand == undefined || sqlCommand == "")
+          throw "Defina uma cláusula para criação da procedure desejada";
 
+        if (tableInfo === null || tableInfo === undefined) {
+          if(sqlCommand.toUpperCase() == "SELECT")
+            return "WHERE 1=1 ; \n";
+          else{
+            throw "Não foi encontrado nenhum campo na tabela informada.";
+          }
+        }
+
+        var key = null,
+            text = "";
+            i = 0,
+            count = tableInfo.length;
+
+        if (tableInfo == null || tableInfo == undefined || count <= 0) return "";
+
+        text += "";
+
+        while (key == null && i < count) {
+          if(tableInfo[i].Key == true){
+            key == tableInfo[i];
+          }
+
+          i++;
+        }
+
+        if(key == null){
+            if(sqlCommand.toUpperCase() == "SELECT"){
+              key = tableInfo[0];
+            }else {
+              return "";
+            }
+        }
+
+        return "WHERE " + key.name + " = p" + key.name + " ; \n";
 };
+
+
+DBReader.ProcedureMapper.prototype.FormatDataTypeParameter = function FormatDataTypeParameter (type) {
+  // body...
+      if(type.indexOf("varchar") > 0){
+          return type;
+      }        
+      else{
+        return type.split("(")[0]; 
+      }
+};
+
+
 
 // ######## Teste #########
 
 var obj = new DBReader.ProcedureMapper({
-  Host:'127.0.0.1',
-  Password:'#gt512M4a1',
-  User:'root',
-  DB:'App'
+  Host:"127.0.0.1",
+  Password:"#gt512M4a1",
+  User:"root",
+  DB:"App"
 });
 
-
 obj.Connect();
-obj.GenerateSelect('Empregado');
+obj.GenerateSelect("Pessoa");
