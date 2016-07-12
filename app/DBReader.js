@@ -116,16 +116,15 @@ DBReader.ProcedureMapper.prototype.GenerateSelect = function GenerateSelect (tab
 
     this.GetColumns(table, function cbkGenerateSelect (tableInfo) {
       
-        var parameters = ctx.MountQueryParameters(tableInfo, "SELECT"), 
-            clauses = ctx.MountWhereClause(tableInfo, "SELECT") + " \n";
+            var clauses = ctx.MountWhereClause(tableInfo, "SELECT") + " \n";
 
-        if(clauses == "")
-          throw "A consulta específica exige um parâmetro para compor a clausula where";
+            if(clauses == "")
+              throw "A consulta específica exige um parâmetro para compor a clausula where";
+        
+            var text = ctx.MountProcedureHeader(table, sqlCommand);
 
-        var text  = "USE " +  ctx.ConnectionConfig.DB + " ;\n";            
-            text += "DROP PROCEDURE IF EXISTS sp" + table + "SELECT ; \n";
-            text += "CREATE PROCEDURE sp" + table + "SELECT " + parameters + " \n";
             text += "BEGIN \n";
+            
             text += "SELECT \n";
 
             for (var i = 0, count = tableInfo.length; i < count; i++) {
@@ -148,6 +147,93 @@ DBReader.ProcedureMapper.prototype.GenerateSelect = function GenerateSelect (tab
     });
 };
 
+DBReader.ProcedureMapper.prototype.MountProcedureHeader = function MountProcedureHeader(table, sqlCommand) {
+  // body...
+    var parameters = ctx.MountQueryParameters(tableInfo, sqlCommand),
+        text  = "USE " +  this.ConnectionConfig.DB + " ;\n";            
+              text += "DROP PROCEDURE IF EXISTS sp" + table + sqlCommand + " ; \n";
+              text += "CREATE PROCEDURE sp" + table + sqlCommand + " " + parameters + " \n";
+
+    return text;
+};
+
+DBReader.ProcedureMapper.prototype.GenerateInsert = function(table) {
+   var ctx = this;
+
+    this.GetColumns(table, function cbkGenerateInsert (tableInfo) {
+        
+        var text = ctx.MountProcedureHeader(table, 'INSERT');
+
+            text += "BEGIN \n";
+            text += " INSERT INTO " + table + " (";
+        
+            for (var i = 0, count = tableInfo.length; i < count; i++) {
+
+              if(tableInfo[i].isPK == true)
+                continue;
+
+              text += (i==0 ? "  ":", ") + tableInfo[i].name + " ";
+            }
+        
+            text += " ) \n";
+        
+            text += " VALUES ( ";
+        
+            for (var i = 0, count = tableInfo.length; i < count; i++) {
+              
+              if(tableInfo[i].isPK == false)
+                text += (i==0 ? "  ":", ") + "p" + tableInfo[i].name + " ";
+            }
+        
+            text += " ) \n";
+
+            text += "END \n";
+
+            ctx.connection.query(text,function (err) {
+                if(err !== null && err !== undefined)
+                  console.log("Houve um erro ao gerar a procedure!" + err);
+                else{
+                  console.log("Procedure gerada com sucesso!");
+                }
+            });
+    });
+};
+
+DBReader.ProcedureMapper.prototype.GenerateUpdate = function GenerateUpdate(table) {
+  // body...
+    var ctx = this;
+
+    this.GetColumns(table, function cbkGenerateInsert (tableInfo) {
+        
+        var text = ctx.MountProcedureHeader(table, 'UPDATE'),
+            clauses = ctx.MountWhereClause(tableInfo, 'UPDATE');
+
+            text += "BEGIN \n";
+            text += " UPDATE " + table + " SET ";
+        
+            for (var i = 0, count = tableInfo.length; i < count; i++) {
+
+              if(tableInfo[i].isPK == false){
+                  text += (i==0 ? "  ":", ") + tableInfo[i].name + " = p" + tableInfo[i].name + "  \n";  
+              }              
+            }
+        
+            text += clauses;
+        
+            text += "  \n";
+
+            text += "END \n";
+
+            ctx.connection.query(text,function (err) {
+                if(err !== null && err !== undefined)
+                  console.log("Houve um erro ao gerar a procedure!" + err);
+                else{
+                  console.log("Procedure gerada com sucesso!");
+                }
+            });
+    }
+};
+
 DBReader.ProcedureMapper.prototype.MountQueryParameters = function MountQueryParameters(tableInfo, sqlCommand) {
     var key = null,
         text = "";
@@ -158,23 +244,66 @@ DBReader.ProcedureMapper.prototype.MountQueryParameters = function MountQueryPar
 
         text += "( ";
 
-        while (key == null && i < count) {
-          if(tableInfo[i].Key == true){
-            key == tableInfo[i];
-          }
+        switch(sqlCommand.toUpperCase()){
+            case "SELECT":
+              while (key == null && i < count) {
+                  if(tableInfo[i].Key == true){
+                    key == tableInfo[i];
+                  }
 
-          i++;
+                  i++;
+                }
+
+                if(key == null){
+                    if(sqlCommand.toUpperCase() == "SELECT"){
+                      key = tableInfo[0];
+                    }else {
+                      return "";
+                    }
+                }
+
+                text += "in p" + key.name + " " + this.FormatDataTypeParameter(key.type) + "  \n";
+                
+              break;
+            case "INSERT":
+              while (i < count) {
+                  if(tableInfo[i].Key == false){
+                      text += (i==0?" ":" , ") + "in p" + key.name + " " + this.FormatDataTypeParameter(key.type) + ";
+                  }
+
+                  i++;
+              }
+              break;
+                  }
+            case "UPDATE":
+              while (i < count) {
+                  text += (i==0?" ":" , ") + "in p" + key.name + " " + this.FormatDataTypeParameter(key.type) + ";
+                  i++;
+              }
+              break;
+            case "DELETE":
+                while (key == null && i < count) {
+                  if(tableInfo[i].Key == true){
+                    key == tableInfo[i];
+                  }
+
+                  i++;
+                }
+
+                if(key == null){
+                    var error = new Error("Não há nenhuma chave primária nesta tabela, a procedure de DELETE não pode ser criada.");
+                    throw error;
+                }
+
+                text += "in p" + key.name + " " + this.FormatDataTypeParameter(key.type) + "  \n";
+
+              break;
+            default:
+              return '';
+              break;
         }
 
-        if(key == null){
-            if(sqlCommand.toUpperCase() == "SELECT"){
-              key = tableInfo[0];
-            }else {
-              return "";
-            }
-        }
-
-        text += "in p" + key.name + " " + this.FormatDataTypeParameter(key.type) + " ) \n";
+        text += " ) ";
 
         return text;
 };
@@ -198,8 +327,6 @@ DBReader.ProcedureMapper.prototype.MountWhereClause = function MountWhereClause(
 
         if (tableInfo == null || tableInfo == undefined || count <= 0) return "";
 
-        text += "";
-
         while (key == null && i < count) {
           if(tableInfo[i].Key == true){
             key == tableInfo[i];
@@ -218,7 +345,6 @@ DBReader.ProcedureMapper.prototype.MountWhereClause = function MountWhereClause(
 
         return "WHERE " + key.name + " = p" + key.name + " ; \n";
 };
-
 
 DBReader.ProcedureMapper.prototype.FormatDataTypeParameter = function FormatDataTypeParameter (type) {
   // body...
@@ -242,4 +368,4 @@ var obj = new DBReader.ProcedureMapper({
 });
 
 obj.Connect();
-obj.GenerateSelect("Pessoa");
+obj.GenerateInsert("Pessoa");
